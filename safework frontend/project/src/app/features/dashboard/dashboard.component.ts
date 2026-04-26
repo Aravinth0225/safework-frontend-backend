@@ -1,0 +1,464 @@
+import { Component, computed, inject } from '@angular/core';
+import { NgIf, NgFor, DatePipe, NgClass, SlicePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
+import { MockDataService } from '../../core/services/mock-data.service';
+
+@Component({
+  selector: 'app-dashboard',
+  standalone: true,
+  imports: [NgIf, NgFor, DatePipe, NgClass, SlicePipe, RouterLink],
+  template: `
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Welcome back, {{ firstName() }}</div>
+          <div class="page-subtitle">{{ user()?.role }} · {{ today | date:'EEEE, MMMM d, y' }}</div>
+        </div>
+      </div>
+
+      <!-- Employee Dashboard -->
+      <ng-container *ngIf="role() === 'Employee'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">⚠</div>
+            <div class="stat-value">{{ myHazards().length }}</div>
+            <div class="stat-label">My Hazard Reports</div>
+            <div class="stat-delta">{{ openHazards() }} open</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">🎓</div>
+            <div class="stat-value">{{ myTrainings().length }}</div>
+            <div class="stat-label">My Trainings</div>
+            <div class="stat-delta">{{ completedTrainings() }} completed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">🔔</div>
+            <div class="stat-value">{{ myUnread() }}</div>
+            <div class="stat-label">Unread Alerts</div>
+            <div class="stat-delta">notifications pending</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">✓</div>
+            <div class="stat-value">{{ trainingRate() }}%</div>
+            <div class="stat-label">Training Completion</div>
+            <div class="stat-delta">your progress</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>My Recent Hazard Reports</h3><a routerLink="/hazards" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let h of myHazards().slice(0,4)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ h.description | slice:0:50 }}...</div>
+                  <div class="text-sm text-muted">{{ h.location }} · {{ h.date | date:'MMM d' }}</div>
+                </div>
+                <span [class]="severityBadge(h.severity)">{{ h.severity }}</span>
+              </div>
+              <div *ngIf="myHazards().length === 0" class="empty-state"><p>No hazard reports yet</p></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>My Training Status</h3><a routerLink="/trainings" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let t of myTrainings().slice(0,4)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ t.programTitle }}</div>
+                  <div class="text-sm text-muted">{{ t.completionDate ? 'Completed: ' + (t.completionDate | date:'MMM d') : 'In progress' }}</div>
+                </div>
+                <span [class]="trainingBadge(t.status)">{{ t.status }}</span>
+              </div>
+              <div *ngIf="myTrainings().length === 0" class="empty-state"><p>No trainings enrolled</p></div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Safety Officer Dashboard -->
+      <ng-container *ngIf="role() === 'Safety Officer' || role() === 'Hazard Officer'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">🔔</div>
+            <div class="stat-value">{{ openIncidents() }}</div>
+            <div class="stat-label">Open Incidents</div>
+            <div class="stat-delta">requiring action</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">⚠</div>
+            <div class="stat-value">{{ criticalHazards() }}</div>
+            <div class="stat-label">Critical Hazards</div>
+            <div class="stat-delta">{{ highHazards() }} high severity</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">🔍</div>
+            <div class="stat-value">{{ scheduledInspections() }}</div>
+            <div class="stat-label">Scheduled Inspections</div>
+            <div class="stat-delta">upcoming</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">✓</div>
+            <div class="stat-value">{{ completedInspections() }}</div>
+            <div class="stat-label">Completed Inspections</div>
+            <div class="stat-delta">this period</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Recent Hazard Reports</h3><a routerLink="/hazards" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let h of allHazards().slice(0,5)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ h.description | slice:0:48 }}...</div>
+                  <div class="text-sm text-muted">{{ h.location }} · {{ h.employeeName }}</div>
+                </div>
+                <span [class]="statusBadge(h.status)">{{ h.status }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Active Incidents</h3><a routerLink="/incidents" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let i of allIncidents().slice(0,5)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ i.hazardDescription | slice:0:48 }}...</div>
+                  <div class="text-sm text-muted">{{ i.date | date:'MMM d' }}</div>
+                </div>
+                <span [class]="incidentBadge(i.status)">{{ i.status }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Manager Dashboard -->
+      <ng-container *ngIf="role() === 'Manager'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">📋</div>
+            <div class="stat-value">{{ activePrograms() }}</div>
+            <div class="stat-label">Active Programs</div>
+            <div class="stat-delta">{{ plannedPrograms() }} planned</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">🎓</div>
+            <div class="stat-value">{{ overallTrainingRate() }}%</div>
+            <div class="stat-label">Training Completion</div>
+            <div class="stat-delta">across all programs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">⚠</div>
+            <div class="stat-value">{{ openHazardsTotal() }}</div>
+            <div class="stat-label">Open Hazards</div>
+            <div class="stat-delta">{{ criticalHazards() }} critical</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">👤</div>
+            <div class="stat-value">{{ totalEmployees() }}</div>
+            <div class="stat-label">Total Employees</div>
+            <div class="stat-delta">{{ activeEmployees() }} active</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Safety Programs</h3><a routerLink="/programs" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let p of allPrograms().slice(0,4)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ p.title }}</div>
+                  <div class="text-sm text-muted">{{ p.enrolledCount }} enrolled · {{ p.completedCount }} completed</div>
+                </div>
+                <span [class]="programBadge(p.status)">{{ p.status }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Recent Reports</h3><a routerLink="/reports" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let r of allReports().slice(0,4)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ r.title }}</div>
+                  <div class="text-sm text-muted">{{ r.generatedDate | date:'MMM d, y' }}</div>
+                </div>
+                <span class="badge badge-info">{{ r.scope }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Administrator Dashboard -->
+      <ng-container *ngIf="role() === 'Administrator'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">👥</div>
+            <div class="stat-value">{{ allUsers().length }}</div>
+            <div class="stat-label">Total Users</div>
+            <div class="stat-delta">{{ activeUsersCount() }} active</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">👤</div>
+            <div class="stat-value">{{ totalEmployees() }}</div>
+            <div class="stat-label">Employees</div>
+            <div class="stat-delta">{{ activeEmployees() }} active</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">⚠</div>
+            <div class="stat-value">{{ openHazardsTotal() }}</div>
+            <div class="stat-label">Open Hazards</div>
+            <div class="stat-delta">system-wide</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">📝</div>
+            <div class="stat-value">{{ auditLogs().length }}</div>
+            <div class="stat-label">Audit Log Entries</div>
+            <div class="stat-delta">all time</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Recent Audit Log</h3><a routerLink="/audit-log" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let log of auditLogs().slice(0,5)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ log.resource | slice:0:52 }}</div>
+                  <div class="text-sm text-muted">{{ log.userName }} · {{ log.timestamp | date:'MMM d, HH:mm' }}</div>
+                </div>
+                <span class="badge badge-neutral">{{ log.action }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>User Breakdown</h3><a routerLink="/users" class="btn btn-sm btn-outline">Manage</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let g of userGroups()" class="list-row">
+                <div class="fw-500">{{ g.role }}</div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div class="mini-bar-wrap"><div class="mini-bar" [style.width.%]="g.pct"></div></div>
+                  <span class="fw-600">{{ g.count }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Compliance Officer Dashboard -->
+      <ng-container *ngIf="role() === 'Compliance Officer'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">✓</div>
+            <div class="stat-value">{{ compliantCount() }}</div>
+            <div class="stat-label">Compliant Records</div>
+            <div class="stat-delta">{{ complianceRate() }}% rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">✗</div>
+            <div class="stat-value">{{ nonCompliantCount() }}</div>
+            <div class="stat-label">Non-Compliant</div>
+            <div class="stat-delta">requiring remediation</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">📊</div>
+            <div class="stat-value">{{ activeAudits() }}</div>
+            <div class="stat-label">Active Audits</div>
+            <div class="stat-delta">in progress</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">📁</div>
+            <div class="stat-value">{{ allCompliance().length }}</div>
+            <div class="stat-label">Total Records</div>
+            <div class="stat-delta">compliance records</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Compliance Records</h3><a routerLink="/compliance" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let c of allCompliance().slice(0,5)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ c.entityDescription }}</div>
+                  <div class="text-sm text-muted">{{ c.type }} · {{ c.date | date:'MMM d' }}</div>
+                </div>
+                <span [class]="complianceBadge(c.result)">{{ c.result }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Audits</h3><a routerLink="/audits" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let a of allAudits().slice(0,4)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ a.scope | slice:0:50 }}</div>
+                  <div class="text-sm text-muted">{{ a.officerName }} · {{ a.date | date:'MMM d' }}</div>
+                </div>
+                <span [class]="auditBadge(a.status)">{{ a.status }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Government Auditor Dashboard -->
+      <ng-container *ngIf="role() === 'Government Auditor'">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#d1fae5">📊</div>
+            <div class="stat-value">{{ complianceRate() }}%</div>
+            <div class="stat-label">Overall Compliance Rate</div>
+            <div class="stat-delta">across all categories</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fee2e2">⚠</div>
+            <div class="stat-value">{{ openHazardsTotal() }}</div>
+            <div class="stat-label">Open Hazards</div>
+            <div class="stat-delta">system-wide</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">🔍</div>
+            <div class="stat-value">{{ completedInspections() }}</div>
+            <div class="stat-label">Completed Inspections</div>
+            <div class="stat-delta">this period</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">📈</div>
+            <div class="stat-value">{{ allReports().length }}</div>
+            <div class="stat-label">Available Reports</div>
+            <div class="stat-delta">for review</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Compliance Overview</h3><a routerLink="/compliance" class="btn btn-sm btn-outline">Details</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let c of allCompliance().slice(0,5)" class="list-row">
+                <div>
+                  <div class="fw-500">{{ c.entityDescription }}</div>
+                  <div class="text-sm text-muted">{{ c.type }} · {{ c.date | date:'MMM d' }}</div>
+                </div>
+                <span [class]="complianceBadge(c.result)">{{ c.result }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Recent Reports</h3><a routerLink="/reports" class="btn btn-sm btn-outline">View All</a></div>
+            <div class="card-body" style="padding:0">
+              <div *ngFor="let r of allReports()" class="list-row">
+                <div>
+                  <div class="fw-500">{{ r.title }}</div>
+                  <div class="text-sm text-muted">{{ r.generatedDate | date:'MMM d, y' }}</div>
+                </div>
+                <span class="badge badge-info">{{ r.scope }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+    </div>
+  `,
+  styles: [`
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    .list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .list-row:last-child { border-bottom: none; }
+    .fw-500 { font-weight: 500; font-size: 13.5px; }
+    .mini-bar-wrap { width: 80px; height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .mini-bar { height: 100%; background: var(--primary-light); border-radius: 4px; transition: width .3s; }
+  `],
+})
+export class DashboardComponent {
+  private auth = inject(AuthService);
+  private data = inject(MockDataService);
+
+  today = new Date();
+  user = this.auth.currentUser;
+  role = this.auth.userRole;
+  firstName = computed(() => this.user()?.name?.split(' ')[0] ?? '');
+
+  allHazards = this.data.hazards;
+  allIncidents = this.data.incidents;
+  allInspections = this.data.inspections;
+  allPrograms = this.data.programs;
+  allReports = this.data.reports;
+  allUsers = this.data.users;
+  allEmployees = this.data.employees;
+  allCompliance = this.data.complianceRecords;
+  allAudits = this.data.audits;
+  auditLogs = this.data.auditLogs;
+
+  myHazards = computed(() => this.allHazards().filter(h => h.employeeId === this.getEmployeeId()));
+  myTrainings = computed(() => this.data.trainings().filter(t => t.employeeId === this.getEmployeeId()));
+  myUnread = computed(() => this.data.getUnreadCount(this.user()?.userId ?? ''));
+  openHazards = computed(() => this.myHazards().filter(h => h.status === 'Open').length);
+  completedTrainings = computed(() => this.myTrainings().filter(t => t.status === 'Completed').length);
+  trainingRate = computed(() => {
+    const t = this.myTrainings();
+    if (!t.length) return 0;
+    return Math.round((this.completedTrainings() / t.length) * 100);
+  });
+
+  openIncidents = computed(() => this.allIncidents().filter(i => i.status === 'Open' || i.status === 'In Progress').length);
+  criticalHazards = computed(() => this.allHazards().filter(h => h.severity === 'Critical' && h.status !== 'Closed').length);
+  highHazards = computed(() => this.allHazards().filter(h => h.severity === 'High' && h.status !== 'Closed').length);
+  scheduledInspections = computed(() => this.allInspections().filter(i => i.status === 'Scheduled').length);
+  completedInspections = computed(() => this.allInspections().filter(i => i.status === 'Completed').length);
+  openHazardsTotal = computed(() => this.allHazards().filter(h => h.status === 'Open' || h.status === 'Under Investigation').length);
+  activePrograms = computed(() => this.allPrograms().filter(p => p.status === 'Active').length);
+  plannedPrograms = computed(() => this.allPrograms().filter(p => p.status === 'Planned').length);
+  totalEmployees = computed(() => this.allEmployees().length);
+  activeEmployees = computed(() => this.allEmployees().filter(e => e.status === 'Active').length);
+  activeUsersCount = computed(() => this.allUsers().filter(u => u.status === 'Active').length);
+  overallTrainingRate = computed(() => {
+    const t = this.data.trainings();
+    if (!t.length) return 0;
+    return Math.round((t.filter(x => x.status === 'Completed').length / t.length) * 100);
+  });
+  compliantCount = computed(() => this.allCompliance().filter(c => c.result === 'Compliant').length);
+  nonCompliantCount = computed(() => this.allCompliance().filter(c => c.result === 'Non-Compliant').length);
+  complianceRate = computed(() => {
+    const total = this.allCompliance().length;
+    if (!total) return 0;
+    return Math.round((this.compliantCount() / total) * 100);
+  });
+  activeAudits = computed(() => this.allAudits().filter(a => a.status === 'In Progress').length);
+  userGroups = computed(() => {
+    const users = this.allUsers();
+    const roles = ['Employee', 'Safety Officer', 'Hazard Officer', 'Manager', 'Administrator', 'Compliance Officer', 'Government Auditor'] as const;
+    const max = Math.max(...roles.map(r => users.filter(u => u.role === r).length), 1);
+    return roles.map(r => ({ role: r, count: users.filter(u => u.role === r).length, pct: (users.filter(u => u.role === r).length / max) * 100 }));
+  });
+
+  private getEmployeeId(): string {
+    const userId = this.user()?.userId ?? '';
+    return this.allEmployees().find(e => e.userId === userId)?.employeeId ?? 'e1';
+  }
+
+  severityBadge(s: string): string {
+    const map: Record<string, string> = { Critical: 'badge badge-danger', High: 'badge badge-warning', Medium: 'badge badge-info', Low: 'badge badge-neutral' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  statusBadge(s: string): string {
+    const map: Record<string, string> = { Open: 'badge badge-danger', 'Under Investigation': 'badge badge-warning', Resolved: 'badge badge-success', Closed: 'badge badge-neutral' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  trainingBadge(s: string): string {
+    const map: Record<string, string> = { Completed: 'badge badge-success', 'In Progress': 'badge badge-info', Enrolled: 'badge badge-primary', Failed: 'badge badge-danger' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  incidentBadge(s: string): string {
+    const map: Record<string, string> = { Open: 'badge badge-danger', 'In Progress': 'badge badge-warning', Resolved: 'badge badge-success', Closed: 'badge badge-neutral' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  programBadge(s: string): string {
+    const map: Record<string, string> = { Active: 'badge badge-success', Planned: 'badge badge-primary', Completed: 'badge badge-neutral', Cancelled: 'badge badge-danger' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  complianceBadge(s: string): string {
+    const map: Record<string, string> = { Compliant: 'badge badge-success', 'Non-Compliant': 'badge badge-danger', Partial: 'badge badge-warning' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+  auditBadge(s: string): string {
+    const map: Record<string, string> = { Planned: 'badge badge-primary', 'In Progress': 'badge badge-warning', Completed: 'badge badge-success', Cancelled: 'badge badge-danger' };
+    return map[s] ?? 'badge badge-neutral';
+  }
+}
