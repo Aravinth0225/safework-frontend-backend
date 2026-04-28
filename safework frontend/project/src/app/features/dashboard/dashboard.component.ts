@@ -1,8 +1,11 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { NgIf, NgFor, DatePipe, NgClass, SlicePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { MockDataService } from '../../core/services/mock-data.service';
+import { HazardService, HazardReportProjection } from '../../core/services/hazard.service';
+import { TrainingService, Training } from '../../core/services/training.service';
+import { ProgramService, Program } from '../../core/services/program.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -49,27 +52,27 @@ import { MockDataService } from '../../core/services/mock-data.service';
           <div class="card">
             <div class="card-header"><h3>My Recent Hazard Reports</h3><a routerLink="/hazards" class="btn btn-sm btn-outline">View All</a></div>
             <div class="card-body" style="padding:0">
-              <div *ngFor="let h of myHazards().slice(0,4)" class="list-row">
+              <div *ngFor="let h of empHazards().slice(0,4)" class="list-row">
                 <div>
-                  <div class="fw-500">{{ h.description | slice:0:50 }}...</div>
-                  <div class="text-sm text-muted">{{ h.location }} · {{ h.date | date:'MMM d' }}</div>
+                  <div class="fw-500">{{ h.hazardDescription | slice:0:50 }}...</div>
+                  <div class="text-sm text-muted">{{ h.hazardLocation }} · {{ h.hazardDate | date:'MMM d' }}</div>
                 </div>
-                <span [class]="severityBadge(h.severity)">{{ h.severity }}</span>
+                <span [class]="statusBadge(h.hazardStatus)">{{ h.hazardStatus }}</span>
               </div>
-              <div *ngIf="myHazards().length === 0" class="empty-state"><p>No hazard reports yet</p></div>
+              <div *ngIf="empHazards().length === 0" class="empty-state"><p>No hazard reports yet</p></div>
             </div>
           </div>
           <div class="card">
             <div class="card-header"><h3>My Training Status</h3><a routerLink="/trainings" class="btn btn-sm btn-outline">View All</a></div>
             <div class="card-body" style="padding:0">
-              <div *ngFor="let t of myTrainings().slice(0,4)" class="list-row">
+              <div *ngFor="let t of empTrainingsView().slice(0,4)" class="list-row">
                 <div>
                   <div class="fw-500">{{ t.programTitle }}</div>
-                  <div class="text-sm text-muted">{{ t.completionDate ? 'Completed: ' + (t.completionDate | date:'MMM d') : 'In progress' }}</div>
+                  <div class="text-sm text-muted">{{ t.trainingCompletionDate ? 'Completed: ' + (t.trainingCompletionDate | date:'MMM d') : 'In progress' }}</div>
                 </div>
-                <span [class]="trainingBadge(t.status)">{{ t.status }}</span>
+                <span [class]="trainingBadge(t.trainingStatus)">{{ getTrainingStatusLabel(t.trainingStatus) }}</span>
               </div>
-              <div *ngIf="myTrainings().length === 0" class="empty-state"><p>No trainings enrolled</p></div>
+              <div *ngIf="empTrainingsView().length === 0" class="empty-state"><p>No trainings enrolled</p></div>
             </div>
           </div>
         </div>
@@ -366,9 +369,12 @@ import { MockDataService } from '../../core/services/mock-data.service';
     .mini-bar { height: 100%; background: var(--primary-light); border-radius: 4px; transition: width .3s; }
   `],
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnInit {
   private auth = inject(AuthService);
   private data = inject(MockDataService);
+  private hazardService = inject(HazardService);
+  private trainingService = inject(TrainingService);
+  private programService = inject(ProgramService);
 
   today = new Date();
   user = this.auth.currentUser;
@@ -386,15 +392,39 @@ export class DashboardComponent {
   allAudits = this.data.audits;
   auditLogs = this.data.auditLogs;
 
-  myHazards = computed(() => this.allHazards().filter(h => h.employeeId === this.getEmployeeId()));
-  myTrainings = computed(() => this.data.trainings().filter(t => t.employeeId === this.getEmployeeId()));
+  // Live Data for Employee
+  empHazards = signal<HazardReportProjection[]>([]);
+  empTrainings = signal<Training[]>([]);
+  empPrograms = signal<Program[]>([]);
+
+  ngOnInit() {
+    if (this.role() === 'Employee') {
+      const uid = Number(this.user()?.userId ?? 0);
+      this.hazardService.getHazardsByEmployee(uid).then(res => this.empHazards.set(res || [])).catch(console.error);
+      this.trainingService.getTrainingsByEmployee(uid).then(res => this.empTrainings.set(res || [])).catch(console.error);
+      this.programService.getAllPrograms().then(res => this.empPrograms.set(res || [])).catch(console.error);
+    }
+  }
+
+  myHazards = computed(() => this.empHazards());
+  myTrainings = computed(() => this.empTrainings());
   myUnread = computed(() => this.data.getUnreadCount(this.user()?.userId ?? ''));
-  openHazards = computed(() => this.myHazards().filter(h => h.status === 'Open').length);
-  completedTrainings = computed(() => this.myTrainings().filter(t => t.status === 'Completed').length);
+  openHazards = computed(() => this.empHazards().filter(h => h.hazardStatus === 'PENDING').length);
+  completedTrainings = computed(() => this.empTrainings().filter(t => t.trainingStatus === 'COMPLETED').length);
   trainingRate = computed(() => {
-    const t = this.myTrainings();
+    const t = this.empTrainings();
     if (!t.length) return 0;
     return Math.round((this.completedTrainings() / t.length) * 100);
+  });
+
+  empTrainingsView = computed(() => {
+    return this.empTrainings().map(t => {
+      const p = this.empPrograms().find(pr => Number(pr.programId) === Number(t.programId));
+      return {
+        ...t,
+        programTitle: p ? p.programTitle : `Program #${t.programId}`
+      };
+    });
   });
 
   openIncidents = computed(() => this.allIncidents().filter(i => i.status === 'Open' || i.status === 'In Progress').length);
@@ -438,11 +468,15 @@ export class DashboardComponent {
     return map[s] ?? 'badge badge-neutral';
   }
   statusBadge(s: string): string {
-    const map: Record<string, string> = { Open: 'badge badge-danger', 'Under Investigation': 'badge badge-warning', Resolved: 'badge badge-success', Closed: 'badge badge-neutral' };
+    const map: Record<string, string> = { PENDING: 'badge badge-warning', COMPLETED: 'badge badge-success', Open: 'badge badge-danger', 'Under Investigation': 'badge badge-warning', Resolved: 'badge badge-success', Closed: 'badge badge-neutral' };
     return map[s] ?? 'badge badge-neutral';
   }
+  getTrainingStatusLabel(s: string): string {
+    const map: Record<string, string> = { COMPLETED: 'Completed', IN_PROGRESS: 'In Progress', ENROLLED: 'Enrolled', FAILED: 'Failed' };
+    return map[s] ?? s;
+  }
   trainingBadge(s: string): string {
-    const map: Record<string, string> = { Completed: 'badge badge-success', 'In Progress': 'badge badge-info', Enrolled: 'badge badge-primary', Failed: 'badge badge-danger' };
+    const map: Record<string, string> = { COMPLETED: 'badge badge-success', IN_PROGRESS: 'badge badge-info', ENROLLED: 'badge badge-primary', FAILED: 'badge badge-danger', Completed: 'badge badge-success', 'In Progress': 'badge badge-info', Enrolled: 'badge badge-primary', Failed: 'badge badge-danger' };
     return map[s] ?? 'badge badge-neutral';
   }
   incidentBadge(s: string): string {

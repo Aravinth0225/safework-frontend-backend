@@ -1,9 +1,15 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, signal, inject, OnInit } from '@angular/core';
 import { NgFor, NgIf, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MockDataService } from '../../core/services/mock-data.service';
+import { TrainingService, Training } from '../../core/services/training.service';
+import { ProgramService, Program } from '../../core/services/program.service';
+import { EmployeeService, EmployeeResponseDTO } from '../../core/services/employee.service';
 import { AuthService } from '../../core/services/auth.service';
-import { Training } from '../../core/models';
+
+interface TrainingView extends Training {
+  employeeName: string;
+  programTitle: string;
+}
 
 @Component({
   selector: 'app-training-list',
@@ -50,27 +56,27 @@ import { Training } from '../../core/models';
         </div>
         <div class="form-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px;">
           <select class="form-control" [(ngModel)]="form.programId">
-            <option value="">Select Program</option>
-            <option *ngFor="let p of assignablePrograms()" [value]="p.programId">{{ p.title }}</option>
+            <option [value]="0">Select Program</option>
+            <option *ngFor="let p of assignablePrograms()" [value]="p.programId">{{ p.programTitle }}</option>
           </select>
           <select class="form-control" [(ngModel)]="form.employeeId">
-            <option value="">Select Employee</option>
-            <option *ngFor="let e of assignableEmployees()" [value]="e.employeeId">{{ e.name }}</option>
+            <option [value]="0">Select Employee</option>
+            <option *ngFor="let e of assignableEmployees()" [value]="e.employeeId">{{ e.employeeName }}</option>
           </select>
-          <select class="form-control" [(ngModel)]="form.status">
-            <option>Enrolled</option>
-            <option>In Progress</option>
-            <option>Completed</option>
-            <option>Failed</option>
+          <select class="form-control" [(ngModel)]="form.trainingStatus">
+            <option value="ENROLLED">Enrolled</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="FAILED">Failed</option>
           </select>
-          <input class="form-control" type="date" [(ngModel)]="form.completionDate" />
+          <input class="form-control" type="date" [(ngModel)]="form.trainingCompletionDate" />
         </div>
         <div style="padding: 0 16px 16px;">
           <button class="btn btn-primary" (click)="assignTraining()">{{ editingTrainingId ? 'Update Training' : 'Assign Training' }}</button>
         </div>
       </div>
 
-      <div class="alert alert-danger" *ngIf="operationError()">{{ operationError() }}</div>
+      <div class="alert alert-danger" *ngIf="operationError()" style="margin: 0 16px 16px;">{{ operationError() }}</div>
 
       <div class="card">
         <div class="card-header">
@@ -81,15 +87,18 @@ import { Training } from '../../core/models';
             </div>
             <select class="form-control" style="width:150px" [(ngModel)]="filterStatus">
               <option value="">All Status</option>
-              <option>Enrolled</option><option>In Progress</option><option>Completed</option><option>Failed</option>
+              <option value="ENROLLED">Enrolled</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="FAILED">Failed</option>
             </select>
             <select class="form-control" style="width:180px" [(ngModel)]="filterProgram">
               <option value="">All Programs</option>
-              <option *ngFor="let p of assignablePrograms()" [value]="p.programId">{{ p.title }}</option>
+              <option *ngFor="let p of assignablePrograms()" [value]="p.programId">{{ p.programTitle }}</option>
             </select>
             <select class="form-control" style="width:180px" [(ngModel)]="filterEmployee">
               <option value="">All Employees</option>
-              <option *ngFor="let e of assignableEmployees()" [value]="e.employeeId">{{ e.name }}</option>
+              <option *ngFor="let e of assignableEmployees()" [value]="e.employeeId">{{ e.employeeName }}</option>
             </select>
           </div>
           <span class="text-muted text-sm">{{ filtered().length }} records</span>
@@ -103,11 +112,11 @@ import { Training } from '../../core/models';
               <tr *ngFor="let t of filtered()">
                 <td class="fw-500">{{ t.employeeName }}</td>
                 <td>{{ t.programTitle }}</td>
-                <td class="text-sm text-muted">{{ t.completionDate ? (t.completionDate | date:'MMM d, y') : '—' }}</td>
-                <td><span [class]="statusBadge(t.status)">{{ t.status }}</span></td>
+                <td class="text-sm text-muted">{{ t.trainingCompletionDate ? (t.trainingCompletionDate | date:'MMM d, y') : '—' }}</td>
+                <td><span [class]="statusBadge(t.trainingStatus)">{{ getStatusLabel(t.trainingStatus) }}</span></td>
                 <td *ngIf="canAssignTraining()" style="display:flex;gap:8px">
                   <button class="btn btn-ghost btn-sm" (click)="editTraining(t)">Edit</button>
-                  <button class="btn btn-danger btn-sm" (click)="deleteTraining(t.trainingId)">Delete</button>
+                  <button class="btn btn-ghost btn-sm text-danger" (click)="deleteTraining(t.id!)">Delete</button>
                 </td>
               </tr>
               <tr *ngIf="filtered().length === 0">
@@ -119,107 +128,174 @@ import { Training } from '../../core/models';
       </div>
     </div>
   `,
-  styles: [`.fw-500{font-weight:500}`],
+  styles: [`.fw-500{font-weight:500} .text-danger{color: var(--danger)}`],
 })
-export class TrainingListComponent {
-  private data = inject(MockDataService);
+export class TrainingListComponent implements OnInit {
+  private trainingService = inject(TrainingService);
+  private programService = inject(ProgramService);
+  private employeeService = inject(EmployeeService);
   private auth = inject(AuthService);
 
   search = '';
   filterStatus = '';
   filterProgram = '';
   filterEmployee = '';
-  operationError = this.data.operationError;
-  editingTrainingId = '';
-  form: { programId: string; employeeId: string; status: Training['status']; completionDate: string } = {
-    programId: '',
-    employeeId: '',
-    status: 'Enrolled',
-    completionDate: '',
+  operationError = signal<string | null>(null);
+  editingTrainingId: number | null = null;
+  form: Partial<Training> = {
+    programId: 0,
+    employeeId: 0,
+    trainingStatus: 'ENROLLED',
+    trainingCompletionDate: '',
   };
 
-  filtered = computed(() => {
-    let list = this.data.trainings();
-    if (this.auth.hasRole('Employee')) {
-      const uid = this.auth.currentUser()?.userId ?? '';
-      const empId = this.data.employees().find(e => e.userId === uid)?.employeeId ?? '';
-      list = list.filter(t => t.employeeId === empId);
+  trainings = signal<Training[]>([]);
+  programs = signal<Program[]>([]);
+  employees = signal<EmployeeResponseDTO[]>([]);
+
+  ngOnInit() {
+    this.loadData();
+  }
+
+  async loadData() {
+    try {
+      // Fetch programs and employees gracefully, as employees might not have permission to fetch ALL employees/programs
+      const [programsResult, employeesResult] = await Promise.allSettled([
+        this.programService.getAllPrograms(),
+        this.employeeService.getAllEmployees()
+      ]);
+      
+      this.programs.set(programsResult.status === 'fulfilled' ? programsResult.value || [] : []);
+      this.employees.set(employeesResult.status === 'fulfilled' ? employeesResult.value || [] : []);
+      
+      await this.loadTrainings();
+    } catch (error: any) {
+      this.operationError.set(error?.error?.message || 'Failed to load initial data');
     }
+  }
+
+  async loadTrainings() {
+    try {
+      let data: Training[];
+      if (this.auth.hasRole('Employee')) {
+        const uid = Number(this.auth.currentUser()?.userId ?? 0);
+        data = await this.trainingService.getTrainingsByEmployee(uid);
+      } else {
+        data = await this.trainingService.getAllTrainings();
+      }
+      this.trainings.set(data || []);
+      this.operationError.set(null);
+    } catch (error: any) {
+      this.operationError.set(error?.error?.message || 'Failed to load trainings');
+    }
+  }
+
+  // Mapped list containing employee names and program titles
+  mappedTrainings = computed<TrainingView[]>(() => {
+    return this.trainings().map(t => {
+      const emp = this.employees().find(e => Number(e.employeeId) === Number(t.employeeId));
+      const prog = this.programs().find(p => Number(p.programId) === Number(t.programId));
+      return {
+        ...t,
+        employeeName: emp ? emp.employeeName : `Emp #${t.employeeId}`,
+        programTitle: prog ? prog.programTitle : `Prog #${t.programId}`
+      };
+    });
+  });
+
+  filtered = computed(() => {
+    let list = this.mappedTrainings();
     const q = this.search.toLowerCase();
     if (q) list = list.filter(t => t.employeeName.toLowerCase().includes(q) || t.programTitle.toLowerCase().includes(q));
-    if (this.filterStatus) list = list.filter(t => t.status === this.filterStatus);
-    if (this.filterProgram) list = list.filter(t => t.programId === this.filterProgram);
-    if (this.filterEmployee) list = list.filter(t => t.employeeId === this.filterEmployee);
+    if (this.filterStatus) list = list.filter(t => t.trainingStatus === this.filterStatus);
+    if (this.filterProgram) list = list.filter(t => t.programId === Number(this.filterProgram));
+    if (this.filterEmployee) list = list.filter(t => t.employeeId === Number(this.filterEmployee));
     return list;
   });
 
-  completed = computed(() => this.data.trainings().filter(t => t.status === 'Completed').length);
-  inProgress = computed(() => this.data.trainings().filter(t => t.status === 'In Progress').length);
-  enrolled = computed(() => this.data.trainings().filter(t => t.status === 'Enrolled').length);
-  failed = computed(() => this.data.trainings().filter(t => t.status === 'Failed').length);
-  assignablePrograms = computed(() => this.data.programs().filter(p => p.status !== 'Cancelled'));
-  assignableEmployees = computed(() => this.data.employees().filter(e => e.status !== 'Terminated'));
+  completed = computed(() => this.trainings().filter(t => t.trainingStatus === 'COMPLETED').length);
+  inProgress = computed(() => this.trainings().filter(t => t.trainingStatus === 'IN_PROGRESS').length);
+  enrolled = computed(() => this.trainings().filter(t => t.trainingStatus === 'ENROLLED').length);
+  failed = computed(() => this.trainings().filter(t => t.trainingStatus === 'FAILED').length);
+  
+  assignablePrograms = computed(() => this.programs().filter(p => p.programStatus !== 'CANCELLED'));
+  assignableEmployees = computed(() => this.employees().filter(e => e.employeeStatus?.toUpperCase() !== 'TERMINATED'));
+
+  getStatusLabel(s: string): string {
+    const map: Record<string, string> = { COMPLETED: 'Completed', IN_PROGRESS: 'In Progress', ENROLLED: 'Enrolled', FAILED: 'Failed' };
+    return map[s] ?? s;
+  }
 
   statusBadge(s: string): string {
-    const map: Record<string, string> = { Completed: 'badge badge-success', 'In Progress': 'badge badge-info', Enrolled: 'badge badge-primary', Failed: 'badge badge-danger' };
+    const map: Record<string, string> = { COMPLETED: 'badge badge-success', IN_PROGRESS: 'badge badge-info', ENROLLED: 'badge badge-primary', FAILED: 'badge badge-danger' };
     return map[s] ?? 'badge badge-neutral';
   }
 
   canAssignTraining(): boolean {
-    return this.auth.hasRole('Administrator');
+    return this.auth.hasRole('Administrator', 'Safety Officer', 'Manager');
   }
 
-  assignTraining(): void {
-    if (!this.form.programId || !this.form.employeeId) {
+  async assignTraining() {
+    if (!this.form.programId || !this.form.employeeId || Number(this.form.programId) === 0 || Number(this.form.employeeId) === 0) {
       this.operationError.set('Please select both program and employee.');
       return;
     }
 
     const payload: Training = {
-      trainingId: '',
-      programId: this.form.programId,
-      programTitle: '',
-      employeeId: this.form.employeeId,
-      employeeName: '',
-      completionDate: this.form.completionDate || undefined,
-      status: this.form.status,
+      programId: Number(this.form.programId),
+      employeeId: Number(this.form.employeeId),
+      trainingCompletionDate: this.form.trainingCompletionDate || undefined,
+      trainingStatus: this.form.trainingStatus || 'ENROLLED',
     };
-    if (this.editingTrainingId) {
-      payload.trainingId = this.editingTrainingId;
-      this.data.updateTraining(payload);
-    } else {
-      this.data.addTraining(payload);
-    }
 
-    this.form = {
-      programId: '',
-      employeeId: '',
-      status: 'Enrolled',
-      completionDate: '',
-    };
-    this.editingTrainingId = '';
+    try {
+      if (this.editingTrainingId) {
+        payload.id = this.editingTrainingId;
+        await this.trainingService.updateTraining(this.editingTrainingId, payload);
+      } else {
+        await this.trainingService.createTraining(payload);
+      }
+      
+      this.form = {
+        programId: 0,
+        employeeId: 0,
+        trainingStatus: 'ENROLLED',
+        trainingCompletionDate: '',
+      };
+      this.editingTrainingId = null;
+      this.loadTrainings();
+    } catch (error: any) {
+      this.operationError.set(error?.error?.message || 'Failed to save training.');
+    }
   }
 
-  editTraining(t: Training): void {
-    this.editingTrainingId = t.trainingId;
+  editTraining(t: TrainingView): void {
+    this.editingTrainingId = t.id!;
     this.form = {
       programId: t.programId,
       employeeId: t.employeeId,
-      status: t.status,
-      completionDate: t.completionDate ?? '',
+      trainingStatus: t.trainingStatus,
+      trainingCompletionDate: t.trainingCompletionDate ?? '',
     };
   }
 
-  deleteTraining(trainingId: string): void {
-    this.data.deleteTraining(trainingId);
-    if (this.editingTrainingId === trainingId) {
-      this.editingTrainingId = '';
-      this.form = {
-        programId: '',
-        employeeId: '',
-        status: 'Enrolled',
-        completionDate: '',
-      };
+  async deleteTraining(trainingId: number) {
+    if (confirm('Are you sure you want to delete this training record?')) {
+      try {
+        await this.trainingService.deleteTraining(trainingId);
+        if (this.editingTrainingId === trainingId) {
+          this.editingTrainingId = null;
+          this.form = {
+            programId: 0,
+            employeeId: 0,
+            trainingStatus: 'ENROLLED',
+            trainingCompletionDate: '',
+          };
+        }
+        this.loadTrainings();
+      } catch (error: any) {
+        this.operationError.set(error?.error?.message || 'Failed to delete training.');
+      }
     }
   }
 }
