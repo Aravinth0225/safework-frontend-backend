@@ -1,9 +1,8 @@
-import { Component, computed, signal, inject } from '@angular/core';
+import { Component, computed, signal, inject, OnInit } from '@angular/core';
 import { NgFor, NgIf, DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MockDataService } from '../../core/services/mock-data.service';
+import { InspectionService, InspectionResponseDTO, InspectionRequestDTO } from '../../core/services/inspection.service';
 import { AuthService } from '../../core/services/auth.service';
-import { Inspection } from '../../core/models';
 
 @Component({
   selector: 'app-inspection-list',
@@ -51,7 +50,10 @@ import { Inspection } from '../../core/models';
                 <td class="text-sm text-muted">{{ ins.date | date:'MMM d, y' }}</td>
                 <td><span [class]="statusBadge(ins.status)">{{ ins.status }}</span></td>
                 <td>
-                  <button class="btn btn-ghost btn-sm" (click)="selected.set(ins)">View</button>
+                  <div style="display:flex;gap:4px">
+                    <button class="btn btn-ghost btn-sm" (click)="selected.set(ins)">View</button>
+                    <button *ngIf="canAdd()" class="btn btn-ghost btn-sm text-danger" (click)="deleteInspection(ins.inspectionId)">Delete</button>
+                  </div>
                 </td>
               </tr>
               <tr *ngIf="filtered().length === 0">
@@ -131,25 +133,40 @@ import { Inspection } from '../../core/models';
       </div>
     </div>
   `,
-  styles: [`.fw-500{font-weight:500}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-item{display:flex;flex-direction:column;gap:3px}.detail-item.full{grid-column:1/-1}.detail-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}`],
+  styles: [`.fw-500{font-weight:500}.text-danger{color: var(--danger)}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-item{display:flex;flex-direction:column;gap:3px}.detail-item.full{grid-column:1/-1}.detail-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}`],
 })
-export class InspectionListComponent {
-  private data = inject(MockDataService);
+export class InspectionListComponent implements OnInit {
+  private inspectionService = inject(InspectionService);
   private auth = inject(AuthService);
 
   search = '';
   filterStatus = '';
   filterType = '';
   showForm = signal(false);
-  selected = signal<Inspection | null>(null);
-  form: Partial<Inspection> = {};
+  selected = signal<InspectionResponseDTO | null>(null);
+  form: Partial<InspectionRequestDTO> = {};
+
+  inspections = signal<InspectionResponseDTO[]>([]);
 
   canAdd = computed(() => this.auth.hasRole('Safety Officer', 'Hazard Officer', 'Administrator'));
 
+  ngOnInit() {
+    this.loadInspections();
+  }
+
+  async loadInspections() {
+    try {
+      const data = await this.inspectionService.getAllInspections();
+      this.inspections.set(data || []);
+    } catch (error) {
+      console.error('Failed to load inspections', error);
+    }
+  }
+
   filtered = computed(() => {
-    let list = this.data.inspections();
+    let list = this.inspections();
     const q = this.search.toLowerCase();
-    if (q) list = list.filter(i => i.location.toLowerCase().includes(q) || i.findings.toLowerCase().includes(q));
+    if (q) list = list.filter(i => i.location.toLowerCase().includes(q) || i.findings?.toLowerCase().includes(q));
     if (this.filterStatus) list = list.filter(i => i.status === this.filterStatus);
     if (this.filterType) list = list.filter(i => i.type === this.filterType);
     return list;
@@ -162,17 +179,26 @@ export class InspectionListComponent {
 
   closeForm(): void { this.showForm.set(false); }
 
-  save(): void {
+  async save() {
     if (!this.form.location || !this.form.date) return;
-    const user = this.auth.currentUser();
-    this.data.addInspection({
-      ...this.form,
-      inspectionId: 'ins' + Date.now(),
-      officerId: user?.userId ?? '',
-      officerName: user?.name ?? '',
-      findings: this.form.findings ?? '',
-    } as Inspection);
-    this.closeForm();
+    try {
+      await this.inspectionService.createInspection(this.form as InspectionRequestDTO);
+      this.closeForm();
+      this.loadInspections();
+    } catch (error) {
+      console.error('Failed to create inspection', error);
+    }
+  }
+
+  async deleteInspection(id: number) {
+    if (confirm('Are you sure you want to delete this inspection?')) {
+      try {
+        await this.inspectionService.deleteInspection(id);
+        this.loadInspections();
+      } catch (error) {
+        console.error('Failed to delete inspection', error);
+      }
+    }
   }
 
   statusBadge(s: string): string {

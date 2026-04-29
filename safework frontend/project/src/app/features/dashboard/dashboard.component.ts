@@ -6,6 +6,8 @@ import { MockDataService } from '../../core/services/mock-data.service';
 import { HazardService, HazardReportProjection } from '../../core/services/hazard.service';
 import { TrainingService, Training } from '../../core/services/training.service';
 import { ProgramService, Program } from '../../core/services/program.service';
+import { IncidentService, IncidentReportProjection } from '../../core/services/incident.service';
+import { InspectionService, InspectionResponseDTO } from '../../core/services/inspection.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -110,21 +112,21 @@ import { ProgramService, Program } from '../../core/services/program.service';
           <div class="card">
             <div class="card-header"><h3>Recent Hazard Reports</h3><a routerLink="/hazards" class="btn btn-sm btn-outline">View All</a></div>
             <div class="card-body" style="padding:0">
-              <div *ngFor="let h of allHazards().slice(0,5)" class="list-row">
+              <div *ngFor="let h of soHazards().slice(0,5)" class="list-row">
                 <div>
-                  <div class="fw-500">{{ h.description | slice:0:48 }}...</div>
-                  <div class="text-sm text-muted">{{ h.location }} · {{ h.employeeName }}</div>
+                  <div class="fw-500">{{ h.hazardDescription | slice:0:48 }}{{ (h.hazardDescription?.length ?? 0) > 48 ? '...' : '' }}</div>
+                  <div class="text-sm text-muted">{{ h.hazardLocation }} · Emp #{{ h.employeeId }}</div>
                 </div>
-                <span [class]="statusBadge(h.status)">{{ h.status }}</span>
+                <span [class]="statusBadge(h.hazardStatus)">{{ h.hazardStatus }}</span>
               </div>
             </div>
           </div>
           <div class="card">
             <div class="card-header"><h3>Active Incidents</h3><a routerLink="/incidents" class="btn btn-sm btn-outline">View All</a></div>
             <div class="card-body" style="padding:0">
-              <div *ngFor="let i of allIncidents().slice(0,5)" class="list-row">
+              <div *ngFor="let i of soIncidents().slice(0,5)" class="list-row">
                 <div>
-                  <div class="fw-500">{{ i.hazardDescription | slice:0:48 }}...</div>
+                  <div class="fw-500">{{ i.hazardDescription | slice:0:48 }}{{ (i.hazardDescription?.length ?? 0) > 48 ? '...' : '' }}</div>
                   <div class="text-sm text-muted">{{ i.date | date:'MMM d' }}</div>
                 </div>
                 <span [class]="incidentBadge(i.status)">{{ i.status }}</span>
@@ -375,6 +377,8 @@ export class DashboardComponent implements OnInit {
   private hazardService = inject(HazardService);
   private trainingService = inject(TrainingService);
   private programService = inject(ProgramService);
+  private incidentService = inject(IncidentService);
+  private inspectionService = inject(InspectionService);
 
   today = new Date();
   user = this.auth.currentUser;
@@ -397,12 +401,21 @@ export class DashboardComponent implements OnInit {
   empTrainings = signal<Training[]>([]);
   empPrograms = signal<Program[]>([]);
 
+  // Live Data for Safety Officer
+  soHazards = signal<HazardReportProjection[]>([]);
+  soIncidents = signal<IncidentReportProjection[]>([]);
+  soInspections = signal<InspectionResponseDTO[]>([]);
+
   ngOnInit() {
     if (this.role() === 'Employee') {
       const uid = Number(this.user()?.userId ?? 0);
       this.hazardService.getHazardsByEmployee(uid).then(res => this.empHazards.set(res || [])).catch(console.error);
       this.trainingService.getTrainingsByEmployee(uid).then(res => this.empTrainings.set(res || [])).catch(console.error);
       this.programService.getAllPrograms().then(res => this.empPrograms.set(res || [])).catch(console.error);
+    } else if (this.role() === 'Safety Officer' || this.role() === 'Hazard Officer') {
+      this.hazardService.getAllHazards().then(res => this.soHazards.set(res || [])).catch(console.error);
+      this.incidentService.getAllIncidents().then(res => this.soIncidents.set(res || [])).catch(console.error);
+      this.inspectionService.getAllInspections().then(res => this.soInspections.set(res || [])).catch(console.error);
     }
   }
 
@@ -427,11 +440,11 @@ export class DashboardComponent implements OnInit {
     });
   });
 
-  openIncidents = computed(() => this.allIncidents().filter(i => i.status === 'Open' || i.status === 'In Progress').length);
-  criticalHazards = computed(() => this.allHazards().filter(h => h.severity === 'Critical' && h.status !== 'Closed').length);
-  highHazards = computed(() => this.allHazards().filter(h => h.severity === 'High' && h.status !== 'Closed').length);
-  scheduledInspections = computed(() => this.allInspections().filter(i => i.status === 'Scheduled').length);
-  completedInspections = computed(() => this.allInspections().filter(i => i.status === 'Completed').length);
+  openIncidents = computed(() => this.soIncidents().filter(i => i.status === 'Open' || i.status === 'In Progress' || i.status === 'PENDING').length);
+  criticalHazards = computed(() => this.soHazards().filter(h => h.hazardStatus === 'PENDING').length);
+  highHazards = computed(() => 0);
+  scheduledInspections = computed(() => this.soInspections().filter(i => i.status === 'Scheduled').length);
+  completedInspections = computed(() => this.soInspections().filter(i => i.status === 'Completed').length);
   openHazardsTotal = computed(() => this.allHazards().filter(h => h.status === 'Open' || h.status === 'Under Investigation').length);
   activePrograms = computed(() => this.allPrograms().filter(p => p.status === 'Active').length);
   plannedPrograms = computed(() => this.allPrograms().filter(p => p.status === 'Planned').length);

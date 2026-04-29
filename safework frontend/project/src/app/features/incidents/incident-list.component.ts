@@ -1,8 +1,7 @@
-import { Component, computed, signal, inject } from '@angular/core';
+import { Component, computed, signal, inject, OnInit } from '@angular/core';
 import { NgFor, NgIf, DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MockDataService } from '../../core/services/mock-data.service';
-import { Incident } from '../../core/models';
+import { IncidentService, IncidentReportProjection } from '../../core/services/incident.service';
 
 @Component({
   selector: 'app-incident-list',
@@ -84,14 +83,29 @@ import { Incident } from '../../core/models';
   `,
   styles: [`.fw-500{font-weight:500}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-item{display:flex;flex-direction:column;gap:3px}.detail-item.full{grid-column:1/-1}.detail-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}`],
 })
-export class IncidentListComponent {
-  private data = inject(MockDataService);
+export class IncidentListComponent implements OnInit {
+  private incidentService = inject(IncidentService);
   search = '';
   filterStatus = '';
-  selected = signal<Incident | null>(null);
+  selected = signal<IncidentReportProjection | null>(null);
+
+  incidents = signal<IncidentReportProjection[]>([]);
+
+  ngOnInit() {
+    this.loadIncidents();
+  }
+
+  async loadIncidents() {
+    try {
+      const data = await this.incidentService.getAllIncidents();
+      this.incidents.set(data || []);
+    } catch (error) {
+      console.error('Failed to load incidents', error);
+    }
+  }
 
   filtered = computed(() => {
-    let list = this.data.incidents();
+    let list = this.incidents();
     const q = this.search.toLowerCase();
     if (q) list = list.filter(i => i.hazardDescription?.toLowerCase().includes(q) || i.actions.toLowerCase().includes(q));
     if (this.filterStatus) list = list.filter(i => i.status === this.filterStatus);
