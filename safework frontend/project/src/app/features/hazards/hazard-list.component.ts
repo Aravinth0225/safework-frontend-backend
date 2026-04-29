@@ -3,6 +3,7 @@ import { NgFor, NgIf, DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HazardService, HazardReportProjection, HazardRequestDto } from '../../core/services/hazard.service';
 import { AuthService } from '../../core/services/auth.service';
+import { IncidentService, IncidentReportProjection } from '../../core/services/incident.service';
 
 @Component({
   selector: 'app-hazard-list',
@@ -99,7 +100,7 @@ import { AuthService } from '../../core/services/auth.service';
 
     <!-- Detail Modal -->
     <div class="modal-backdrop" *ngIf="selected()" (click)="selected.set(null)">
-      <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal" style="max-width: 600px;" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h3>Hazard Detail</h3>
           <button class="btn btn-ghost btn-sm" (click)="selected.set(null)">✕</button>
@@ -112,6 +113,18 @@ import { AuthService } from '../../core/services/auth.service';
             <div class="detail-item"><span class="detail-label">Location</span><span>{{ h.hazardLocation }}</span></div>
             <div class="detail-item"><span class="detail-label">Reported By Emp ID</span><span>{{ h.employeeId }}</span></div>
             <div class="detail-item"><span class="detail-label">Date</span><span>{{ h.hazardDate | date:'MMMM d, y' }}</span></div>
+          </div>
+          
+          <div *ngIf="relatedIncident()" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
+            <h4 style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">Incident Resolution Actions</h4>
+            <div class="detail-grid">
+              <div class="detail-item full"><span class="detail-label">Actions Taken by Hazard Officer</span><span style="background:var(--surface);padding:8px;border-radius:4px;font-size:13px;border:1px solid var(--border);">{{ relatedIncident()?.action }}</span></div>
+              <div class="detail-item"><span class="detail-label">Resolved By</span><span>Emp #{{ relatedIncident()?.officerId }}</span></div>
+              <div class="detail-item"><span class="detail-label">Resolution Date</span><span>{{ relatedIncident()?.incidentDate | date:'MMMM d, y' }}</span></div>
+            </div>
+          </div>
+          <div *ngIf="h.hazardStatus === 'COMPLETED' && relatedIncident() === null && loadingIncident()" style="margin-top: 24px;">
+             <p class="text-sm text-muted">Loading incident details...</p>
           </div>
         </div>
         <div class="modal-footer">
@@ -157,12 +170,15 @@ import { AuthService } from '../../core/services/auth.service';
 })
 export class HazardListComponent implements OnInit {
   private hazardService = inject(HazardService);
+  private incidentService = inject(IncidentService);
   private auth = inject(AuthService);
 
   search = '';
   filterStatus = '';
   showForm = signal(false);
   selected = signal<HazardReportProjection | null>(null);
+  relatedIncident = signal<IncidentReportProjection | null>(null);
+  loadingIncident = signal<boolean>(false);
   statusTarget = signal<HazardReportProjection | null>(null);
   newStatus: string = 'PENDING';
   form: Partial<HazardRequestDto> = {};
@@ -230,7 +246,21 @@ export class HazardListComponent implements OnInit {
     }
   }
 
-  viewDetail(h: HazardReportProjection): void { this.selected.set(h); }
+  async viewDetail(h: HazardReportProjection) {
+    this.selected.set(h);
+    this.relatedIncident.set(null);
+    if (h.hazardStatus === 'COMPLETED') {
+       this.loadingIncident.set(true);
+       try {
+         const incident = await this.incidentService.getIncidentByHazardId(h.hazardId);
+         this.relatedIncident.set(incident);
+       } catch (error) {
+         console.warn('No incident found or failed to load incident details', error);
+       } finally {
+         this.loadingIncident.set(false);
+       }
+    }
+  }
 
   openStatusModal(h: HazardReportProjection): void {
     this.statusTarget.set(h);
@@ -271,3 +301,4 @@ export class HazardListComponent implements OnInit {
     return map[s] ?? 'badge badge-neutral';
   }
 }
+

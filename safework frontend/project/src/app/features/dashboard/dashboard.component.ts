@@ -127,9 +127,9 @@ import { InspectionService, InspectionResponseDTO } from '../../core/services/in
               <div *ngFor="let i of soIncidents().slice(0,5)" class="list-row">
                 <div>
                   <div class="fw-500">{{ i.hazardDescription | slice:0:48 }}{{ (i.hazardDescription?.length ?? 0) > 48 ? '...' : '' }}</div>
-                  <div class="text-sm text-muted">{{ i.date | date:'MMM d' }}</div>
+                  <div class="text-sm text-muted">{{ i.incidentDate | date:'MMM d' }}</div>
                 </div>
-                <span [class]="incidentBadge(i.status)">{{ i.status }}</span>
+                <span [class]="incidentBadge('Closed')">Closed</span>
               </div>
             </div>
           </div>
@@ -440,11 +440,11 @@ export class DashboardComponent implements OnInit {
     });
   });
 
-  openIncidents = computed(() => this.soIncidents().filter(i => i.status === 'Open' || i.status === 'In Progress' || i.status === 'PENDING').length);
+  openIncidents = computed(() => 0);
   criticalHazards = computed(() => this.soHazards().filter(h => h.hazardStatus === 'PENDING').length);
   highHazards = computed(() => 0);
-  scheduledInspections = computed(() => this.soInspections().filter(i => i.status === 'Scheduled').length);
-  completedInspections = computed(() => this.soInspections().filter(i => i.status === 'Completed').length);
+  scheduledInspections = computed(() => this.soInspections().filter(i => i.inspectionStatus === 'SCHEDULED').length);
+  completedInspections = computed(() => this.soInspections().filter(i => i.inspectionStatus === 'COMPLETED').length);
   openHazardsTotal = computed(() => this.allHazards().filter(h => h.status === 'Open' || h.status === 'Under Investigation').length);
   activePrograms = computed(() => this.allPrograms().filter(p => p.status === 'Active').length);
   plannedPrograms = computed(() => this.allPrograms().filter(p => p.status === 'Planned').length);

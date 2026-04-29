@@ -27,11 +27,9 @@ import { AuthService } from '../../core/services/auth.service';
             </div>
             <select class="form-control" style="width:160px" [(ngModel)]="filterStatus">
               <option value="">All Status</option>
-              <option>Scheduled</option><option>In Progress</option><option>Completed</option><option>Cancelled</option>
-            </select>
-            <select class="form-control" style="width:140px" [(ngModel)]="filterType">
-              <option value="">All Types</option>
-              <option>Routine</option><option>Compliance</option><option>Special</option>
+              <option value="SCHEDULED">Scheduled</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="COMPLETED">Completed</option>
             </select>
           </div>
           <span class="text-muted text-sm">{{ filtered().length }} records</span>
@@ -39,19 +37,19 @@ import { AuthService } from '../../core/services/auth.service';
         <div class="table-wrapper">
           <table>
             <thead>
-              <tr><th>Location</th><th>Type</th><th>Findings</th><th>Officer</th><th>Date</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Location</th><th>Findings</th><th>Officer ID</th><th>Date</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               <tr *ngFor="let ins of filtered()">
-                <td class="fw-500">{{ ins.location }}</td>
-                <td><span class="badge badge-primary">{{ ins.type }}</span></td>
-                <td style="max-width:220px" class="text-sm text-muted">{{ ins.findings ? (ins.findings | slice:0:60) + (ins.findings.length > 60 ? '...' : '') : '—' }}</td>
-                <td class="text-sm">{{ ins.officerName }}</td>
-                <td class="text-sm text-muted">{{ ins.date | date:'MMM d, y' }}</td>
-                <td><span [class]="statusBadge(ins.status)">{{ ins.status }}</span></td>
+                <td class="fw-500">{{ ins.inspectionLocation }}</td>
+                <td style="max-width:220px" class="text-sm text-muted">{{ ins.inspectionFindings ? (ins.inspectionFindings | slice:0:60) + (ins.inspectionFindings.length > 60 ? '...' : '') : '—' }}</td>
+                <td class="text-sm">Emp #{{ ins.officerId }}</td>
+                <td class="text-sm text-muted">{{ ins.inspectionDate | date:'MMM d, y' }}</td>
+                <td><span [class]="statusBadge(ins.inspectionStatus)">{{ formatStatus(ins.inspectionStatus) }}</span></td>
                 <td>
                   <div style="display:flex;gap:4px">
                     <button class="btn btn-ghost btn-sm" (click)="selected.set(ins)">View</button>
+                    <button *ngIf="canAdd()" class="btn btn-ghost btn-sm" (click)="editInspection(ins)">Edit</button>
                     <button *ngIf="canAdd()" class="btn btn-ghost btn-sm text-danger" (click)="deleteInspection(ins.inspectionId)">Delete</button>
                   </div>
                 </td>
@@ -76,30 +74,26 @@ import { AuthService } from '../../core/services/auth.service';
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Location *</label>
-              <input class="form-control" [(ngModel)]="form.location" placeholder="Building/Area" />
+              <input class="form-control" [(ngModel)]="form.inspectionLocation" placeholder="Building/Area" />
             </div>
             <div class="form-group">
-              <label class="form-label">Type</label>
-              <select class="form-control" [(ngModel)]="form.type">
-                <option>Routine</option><option>Compliance</option><option>Special</option>
+              <label class="form-label">Status</label>
+              <select class="form-control" [(ngModel)]="form.inspectionStatus">
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="COMPLETED">Completed</option>
               </select>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Date *</label>
-              <input type="date" class="form-control" [(ngModel)]="form.date" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Status</label>
-              <select class="form-control" [(ngModel)]="form.status">
-                <option>Scheduled</option><option>In Progress</option><option>Completed</option>
-              </select>
+              <input type="date" class="form-control" [(ngModel)]="form.inspectionDate" />
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Findings / Notes</label>
-            <textarea class="form-control" [(ngModel)]="form.findings" rows="3" placeholder="Document inspection findings..."></textarea>
+            <textarea class="form-control" [(ngModel)]="form.inspectionFindings" rows="3" placeholder="Document inspection findings..."></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -119,12 +113,11 @@ import { AuthService } from '../../core/services/auth.service';
         <div class="modal-body" *ngIf="selected() as ins">
           <div class="detail-grid">
             <div class="detail-item"><span class="detail-label">ID</span><span>{{ ins.inspectionId }}</span></div>
-            <div class="detail-item"><span class="detail-label">Status</span><span [class]="statusBadge(ins.status)">{{ ins.status }}</span></div>
-            <div class="detail-item"><span class="detail-label">Location</span><span>{{ ins.location }}</span></div>
-            <div class="detail-item"><span class="detail-label">Type</span><span>{{ ins.type }}</span></div>
-            <div class="detail-item"><span class="detail-label">Officer</span><span>{{ ins.officerName }}</span></div>
-            <div class="detail-item"><span class="detail-label">Date</span><span>{{ ins.date | date:'MMMM d, y' }}</span></div>
-            <div class="detail-item full"><span class="detail-label">Findings</span><span>{{ ins.findings || 'No findings recorded yet.' }}</span></div>
+            <div class="detail-item"><span class="detail-label">Status</span><span [class]="statusBadge(ins.inspectionStatus)">{{ formatStatus(ins.inspectionStatus) }}</span></div>
+            <div class="detail-item"><span class="detail-label">Location</span><span>{{ ins.inspectionLocation }}</span></div>
+            <div class="detail-item"><span class="detail-label">Officer ID</span><span>Emp #{{ ins.officerId }}</span></div>
+            <div class="detail-item"><span class="detail-label">Date</span><span>{{ ins.inspectionDate | date:'MMMM d, y' }}</span></div>
+            <div class="detail-item full"><span class="detail-label">Findings</span><span>{{ ins.inspectionFindings || 'No findings recorded yet.' }}</span></div>
           </div>
         </div>
         <div class="modal-footer">
@@ -141,10 +134,10 @@ export class InspectionListComponent implements OnInit {
 
   search = '';
   filterStatus = '';
-  filterType = '';
   showForm = signal(false);
   selected = signal<InspectionResponseDTO | null>(null);
   form: Partial<InspectionRequestDTO> = {};
+  editingInspectionId: number | null = null;
 
   inspections = signal<InspectionResponseDTO[]>([]);
 
@@ -166,27 +159,43 @@ export class InspectionListComponent implements OnInit {
   filtered = computed(() => {
     let list = this.inspections();
     const q = this.search.toLowerCase();
-    if (q) list = list.filter(i => i.location.toLowerCase().includes(q) || i.findings?.toLowerCase().includes(q));
-    if (this.filterStatus) list = list.filter(i => i.status === this.filterStatus);
-    if (this.filterType) list = list.filter(i => i.type === this.filterType);
+    if (q) list = list.filter(i => i.inspectionLocation?.toLowerCase().includes(q) || i.inspectionFindings?.toLowerCase().includes(q));
+    if (this.filterStatus) list = list.filter(i => i.inspectionStatus === this.filterStatus);
     return list;
   });
 
   openForm(): void {
-    this.form = { status: 'Scheduled', type: 'Routine', date: new Date().toISOString().split('T')[0] };
+    this.form = { inspectionStatus: 'SCHEDULED', inspectionDate: new Date().toISOString().split('T')[0] };
+    this.editingInspectionId = null;
+    this.showForm.set(true);
+  }
+
+  editInspection(ins: InspectionResponseDTO): void {
+    this.form = { ...ins };
+    if (this.form.inspectionDate) {
+       this.form.inspectionDate = new Date(this.form.inspectionDate).toISOString().split('T')[0];
+    }
+    this.editingInspectionId = ins.inspectionId;
     this.showForm.set(true);
   }
 
   closeForm(): void { this.showForm.set(false); }
 
   async save() {
-    if (!this.form.location || !this.form.date) return;
+    if (!this.form.inspectionLocation || !this.form.inspectionDate) return;
     try {
-      await this.inspectionService.createInspection(this.form as InspectionRequestDTO);
+      const dto = this.form as InspectionRequestDTO;
+      dto.officerId = Number(this.auth.currentUser()?.userId ?? 1);
+      
+      if (this.editingInspectionId) {
+        await this.inspectionService.updateInspection(this.editingInspectionId, dto);
+      } else {
+        await this.inspectionService.createInspection(dto);
+      }
       this.closeForm();
       this.loadInspections();
     } catch (error) {
-      console.error('Failed to create inspection', error);
+      console.error('Failed to save inspection', error);
     }
   }
 
@@ -202,7 +211,12 @@ export class InspectionListComponent implements OnInit {
   }
 
   statusBadge(s: string): string {
-    const map: Record<string, string> = { Scheduled: 'badge badge-primary', 'In Progress': 'badge badge-warning', Completed: 'badge badge-success', Cancelled: 'badge badge-danger' };
+    const map: Record<string, string> = { SCHEDULED: 'badge badge-primary', IN_PROGRESS: 'badge badge-warning', COMPLETED: 'badge badge-success', CANCELLED: 'badge badge-danger' };
     return map[s] ?? 'badge badge-neutral';
+  }
+
+  formatStatus(s: string): string {
+    if (!s) return '';
+    return s.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   }
 }

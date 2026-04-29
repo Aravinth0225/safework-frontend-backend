@@ -4,8 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
 
 export interface IncidentRequestDto {
-  actions: string;
-  status: string;
+  action: string;
 }
 
 export interface IncidentReportProjection {
@@ -13,10 +12,8 @@ export interface IncidentReportProjection {
   hazardId: number;
   hazardDescription: string;
   officerId: number;
-  officerName: string;
-  actions: string;
-  date: string;
-  status: string;
+  action: string;
+  incidentDate: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -43,5 +40,17 @@ export class IncidentService {
 
   async addIncident(hazardId: number, dto: IncidentRequestDto): Promise<IncidentRequestDto> {
     return firstValueFrom(this.http.post<IncidentRequestDto>(`${this.apiUrl}/${hazardId}`, dto, this.headers));
+  }
+
+  async getIncidentByHazardId(hazardId: number): Promise<IncidentReportProjection> {
+    return firstValueFrom(this.http.get<IncidentReportProjection>(`${this.apiUrl}/hazard/${hazardId}`, this.headers));
+  }
+
+  async updateIncident(incidentId: number, dto: IncidentRequestDto): Promise<IncidentRequestDto> {
+    return firstValueFrom(this.http.put<IncidentRequestDto>(`${this.apiUrl}/${incidentId}`, dto, this.headers));
+  }
+
+  async deleteIncident(incidentId: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`${this.apiUrl}/${incidentId}`, this.headers));
   }
 }

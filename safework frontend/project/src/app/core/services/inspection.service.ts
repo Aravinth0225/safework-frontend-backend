@@ -4,22 +4,20 @@ import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
 
 export interface InspectionRequestDTO {
-  location: string;
-  type: string;
-  findings: string;
-  date: string;
-  status: string;
+  inspectionLocation: string;
+  inspectionFindings: string;
+  inspectionDate: string;
+  inspectionStatus: string;
+  officerId: number;
 }
 
 export interface InspectionResponseDTO {
   inspectionId: number;
+  inspectionLocation: string;
+  inspectionFindings: string;
+  inspectionDate: string;
+  inspectionStatus: string;
   officerId: number;
-  officerName: string;
-  location: string;
-  type: string;
-  findings: string;
-  date: string;
-  status: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -42,6 +40,10 @@ export class InspectionService {
 
   async createInspection(dto: InspectionRequestDTO): Promise<InspectionResponseDTO> {
     return firstValueFrom(this.http.post<InspectionResponseDTO>(`${this.apiUrl}/createInspection`, dto, this.headers));
+  }
+
+  async updateInspection(id: number, dto: InspectionRequestDTO): Promise<InspectionResponseDTO> {
+    return firstValueFrom(this.http.put<InspectionResponseDTO>(`${this.apiUrl}/update/${id}`, dto, this.headers));
   }
 
   async deleteInspection(id: number): Promise<string> {
